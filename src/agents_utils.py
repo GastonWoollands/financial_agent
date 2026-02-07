@@ -320,7 +320,7 @@ def create_financial_agent(agent_type: str) -> Agent:
     full_instructions = BASE_INSTRUCTIONS + "\n" + config["instructions"]
 
     return Agent(
-        model=Gemini(id="gemini-2.0-flash-exp"),
+        model=Gemini(id="gemini-2.5-flash"),
         tools=[
             YFinanceTools(**config["tools"])
         ],
