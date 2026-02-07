@@ -38,26 +38,25 @@ BASE_INSTRUCTIONS = dedent("""\
 
 #----------------------------------------------------------------------------
 
-WELCOME_MESSAGE = """¡Qué tal, che! Acá estoy, tu compañero financiero, para aclararte el panorama del mercado. 💪
+WELCOME_MESSAGE = """¡Qué tal! Acá estoy, tu asistente financiero, para aclararte el panorama del mercado.
 
-Te traigo datos del mundo financiero. Acá van mis jugadas:
+Te traigo datos del mundo financiero. Acá van mis funcionalidades:
 
 Comandos principales:
 /precio - Precio de una acción. Ejemplo: /precio $AAPL
 /noticias - Últimas novedades de una empresa. Ejemplo: /noticias $TSLA
-/noticias_general - Un repasito rápido de cómo viene la mano en el mercado.
+/noticias_general - Un repasito rápido de las ultimas noticias del mercado.
 /tecnicos - Análisis técnico del activo que gustes. Ejemplo: /tecnicos $GOOGL
 /fundamentales - Los números de una empresa. Ejemplo: /fundamentales $AAPL
-/correlacion - Te cuento cómo se llevan una lista de acciones. Ejemplo: /correlacion $AAPL $MELI
+/correlacion - Te doy informacion sobre correlaciones entre empresas. Ejemplo: /correlacion $AAPL $MELI
 /volatilidad - Analizo la volatilidad de una accion. Ejemplo: /volatilidad $MELI
 /opciones - Analizo las opciones de una accion. Ejemplo: /opciones $MELI
 
-¿Cómo viene el tema tickers?
+Para tickers:
 - Usá $ y mayúsculas para que lo capture mejor. (por ejemplo, $AAPL).
 
 Usa /help si necesitas y te doy una mano.
-
-Vamos, arrancá! ¿Qué querés saber hoy?"""
+"""
 
 #----------------------------------------------------------------------------
 
