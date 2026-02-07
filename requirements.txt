@@ -3,5 +3,5 @@ pandas==2.2.3
 python-telegram-bot==21.10
 numpy==2.0.2
 scipy==1.13.1
-yfinance==0.2.58
+yfinance==1.1.0
 google-generativeai==0.8.4
