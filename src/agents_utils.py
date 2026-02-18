@@ -51,6 +51,7 @@ Comandos principales:
 /correlacion - Te doy informacion sobre correlaciones entre empresas. Ejemplo: /correlacion $AAPL $MELI
 /volatilidad - Analizo la volatilidad de una accion. Ejemplo: /volatilidad $MELI
 /opciones - Analizo las opciones de una accion. Ejemplo: /opciones $MELI
+/bs - Precio teórico Black-Scholes para una opción. Ejemplo: /bs $AAPL 200 2025-06-20 call
 
 Para tickers:
 - Usá $ y mayúsculas para que lo capture mejor. (por ejemplo, $AAPL).
@@ -72,6 +73,7 @@ AGENT_CONFIGS = {
             "technical_indicators": False,
             "key_financial_ratios": False,
             "correlation": True,
+            "black_scholes_pricing": False,
         },
         "instructions": dedent("""\
             You are an expert in market analysis, portfolio management, and economic trends, leveraging tools for stock prices, fundamentals, historical data, analyst insights, company details, news, and correlations.
@@ -99,6 +101,7 @@ AGENT_CONFIGS = {
             "technical_indicators": True,
             "key_financial_ratios": False,
             "correlation": False,
+            "black_scholes_pricing": False,
         },
         "instructions": dedent("""\
             You specialize in technical analysis, using stock price data and indicators to inform trading decisions.
@@ -138,6 +141,7 @@ AGENT_CONFIGS = {
             "key_financial_ratios": True,
             "correlation": False,
             "historical_evolution": True,
+            "black_scholes_pricing": False,
         },
         "instructions": dedent("""\
             You specialize in fundamental analysis, leveraging financial statements, key ratios, analyst recommendations, and news to evaluate stocks.
@@ -190,7 +194,8 @@ AGENT_CONFIGS = {
             "technical_indicators": False,
             "key_financial_ratios": False,
             "correlation": True,
-            "volatility": True
+            "volatility": True,
+            "black_scholes_pricing": False,
         },
         "instructions": dedent("""\
             Your expertise is in analyzing how two assets move together, how wild their swings get, and what's the payoff versus the risk, che.
@@ -233,6 +238,7 @@ AGENT_CONFIGS = {
             "correlation": False,
             "volatility": True,
             "options_sentiment": True,
+            "black_scholes_pricing": True,
         },
         "instructions": dedent("""\
             Your expertise is in options trading, reading the market's pulse through options data to spot bullish or bearish vibes, che.
@@ -255,6 +261,7 @@ AGENT_CONFIGS = {
                 - get_correlation(symbol_1: str, symbol_2: str)
                 - get_volatility(symbol: str)
                 - get_options_sentiment(symbol: str)
+                - get_black_scholes_pricing(symbol: str, strike: float, expiration_date: str, option_type: str = "call")
         """)
     },
     "historical_evolution": {

@@ -82,6 +82,40 @@ def extract_symbol(text: str) -> str:
         logger.error(f"Error extracting symbol from text '{text}': {str(e)}")
         return None
 
+
+def parse_bs_args(args: list) -> tuple:
+    """
+    Parse /bs command arguments: symbol, strike, expiration_date, option_type.
+    Returns (symbol, strike, expiration_date, option_type) on success,
+    or (None, error_message) on failure.
+    """
+    if not args or len(args) != 4:
+        return (
+            None,
+            "Uso: /bs $TICKER STRIKE YYYY-MM-DD call|put. Ejemplo: /bs $AAPL 200 2025-06-20 call",
+        )
+    symbol_raw, strike_str, expiration_date, option_type_raw = args
+    symbol = extract_symbol(symbol_raw)
+    if not symbol:
+        return (None, "Uso: /bs $TICKER STRIKE YYYY-MM-DD call|put. Ejemplo: /bs $AAPL 200 2025-06-20 call")
+    try:
+        strike = float(strike_str)
+        if strike <= 0:
+            return (None, "El strike tiene que ser un número positivo.")
+    except (ValueError, TypeError):
+        return (None, "El strike tiene que ser un número positivo.")
+    try:
+        exp_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+        if exp_date.date() <= datetime.now().date():
+            return (None, "La fecha de vencimiento tiene que ser YYYY-MM-DD y en el futuro.")
+    except ValueError:
+        return (None, "La fecha de vencimiento tiene que ser YYYY-MM-DD y en el futuro.")
+    option_type = option_type_raw.strip().lower()
+    if option_type not in ("call", "put"):
+        return (None, "El tipo de opción tiene que ser 'call' o 'put'.")
+    return (symbol, strike, expiration_date, option_type)
+
+
 #----------------------------------------------------------------------------
 
 async def get_agent_response(agent: Agent, query: str, progress: ProgressIndicator = None) -> str:
@@ -145,6 +179,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /correlacion - Te cuento cómo se llevan una lista de acciones. Ejemplo: /correlacion $AAPL $MELI
 /volatilidad - Te analizo la volatilidad de una acción. Ejemplo: /volatilidad $MELI
 /opciones - Te analizo opciones financieras de una acción. Ejemplo: /opciones $MELI
+/bs - Precio teórico Black-Scholes de una opción. Ejemplo: /bs $AAPL 200 2025-06-20 call
 
 💡 Tips:
 Usá MAYÚSCULAS para los tickers
@@ -320,6 +355,53 @@ async def volatility(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await handle_command(update, context, COMMANDS["opciones"])
 
+
+#----------------------------------------------------------------------------
+
+async def bs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /bs $TICKER STRIKE YYYY-MM-DD call|put for Black-Scholes pricing."""
+    user_id = update.effective_user.id
+    command = "/bs"
+    start_time = time.time()
+
+    logger.info(f"Command '{command}' received from user {user_id}")
+
+    if not rate_limiter.is_allowed(user_id):
+        logger.warning(f"Rate limit exceeded for user {user_id}")
+        await update.message.reply_text("Che, estás haciendo muchas consultas. Esperá un minuto y volvé a intentar.")
+        return
+
+    progress = ProgressIndicator(update, context)
+    await progress.start("Calculando Black-Scholes")
+
+    try:
+        parsed = parse_bs_args(context.args or [])
+        if parsed[0] is None:
+            await progress.stop()
+            await update.message.reply_text(parsed[1])
+            return
+
+        symbol, strike, expiration_date, option_type = parsed
+        query = (
+            f"Calculate the Black-Scholes theoretical price for {symbol}, strike {strike}, "
+            f"expiration date {expiration_date}, {option_type} option. "
+            f"Use get_black_scholes_pricing with symbol={symbol}, strike={strike}, "
+            f"expiration_date={expiration_date}, option_type={option_type}."
+        )
+        logger.info(f"BS query for user {user_id}: {query}")
+        await progress.update_text("Procesando datos")
+        config = COMMANDS["bs"]
+        response_text = await get_agent_response(config.agent, query, progress)
+        await progress.stop()
+        await update.message.reply_text(response_text)
+        execution_time = time.time() - start_time
+        log_bot_response(user_id, command, response_text, execution_time)
+    except Exception as e:
+        logger.error(f"Unexpected error in bs_command for user {user_id}: {str(e)}")
+        await progress.stop()
+        await update.message.reply_text("Ups, algo salió mal. Intentá de nuevo más tarde.")
+
+
 #----------------------------------------------------------------------------
 
 def setup_application() -> ApplicationBuilder:
@@ -355,7 +437,8 @@ def register_handlers(app):
         "fundamentales": fundamental_analysis,
         "correlacion": correlation,
         "volatilidad": volatility,
-        "opciones": options
+        "opciones": options,
+        "bs": bs_command,
     }
     for command, handler in handlers.items():
         app.add_handler(CommandHandler(command, handler))

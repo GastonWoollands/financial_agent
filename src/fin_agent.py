@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from datetime import datetime
 import numpy as np
+from scipy.stats import norm
 
 class YFinanceTools(Toolkit):
     """A toolkit for retrieving financial data using the yFinance API."""
@@ -28,6 +29,7 @@ class YFinanceTools(Toolkit):
         volatility: bool = True,
         options_sentiment: bool = False,
         historical_evolution: bool = False,
+        black_scholes_pricing: bool = False,
         enable_all: bool = False,
         max_workers: int = 5,
         request_timeout: int = 10,
@@ -66,6 +68,8 @@ class YFinanceTools(Toolkit):
             self.register(self.get_options_sentiment)
         if historical_evolution or enable_all:
             self.register(self.get_historical_comparison)
+        if black_scholes_pricing or enable_all:
+            self.register(self.get_black_scholes_pricing)
 
     def _retry_with_backoff(self, func, *args, **kwargs):
         """Implement exponential backoff for retrying failed requests."""
@@ -749,3 +753,64 @@ class YFinanceTools(Toolkit):
             return self._to_json(comparison)
         except Exception as e:
             return self._to_json(None, f"Error processing {symbol}: {str(e)}")
+
+    def get_black_scholes_pricing(self, symbol: str, strike: float, expiration_date: str, option_type: str = "call") -> str:
+            """Calculates the theoretical Black-Scholes price for an option.
+            
+            Args:
+                symbol (str): Stock ticker.
+                strike (float): Strike price of the option.
+                expiration_date (str): Expiration date in 'YYYY-MM-DD' format.
+                option_type (str): "call" or "put".
+            """
+            try:
+                ticker = self._fetch_ticker(symbol)
+                
+                # 1. Get Current Underlying Price (S)
+                S = ticker.info.get("regularMarketPrice") or ticker.info.get("currentPrice")
+                
+                # 2. Get Risk-Free Rate (r) - Using 4% as a standard placeholder or fetch ^TNX
+                r = 0.04 
+                
+                # 3. Calculate Time to Maturity (T) in years
+                exp_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+                T = (exp_date - datetime.now()).days / 365.0
+                if T <= 0:
+                    return self._to_json(None, "Expiration date must be in the future.")
+
+                # 4. Get Implied Volatility (sigma) from the option chain
+                chain = ticker.option_chain(expiration_date)
+                options_df = chain.calls if option_type.lower() == "call" else chain.puts
+                
+                # Find the closest strike to get a representative IV
+                idx = (options_df['strike'] - strike).abs().idxmin()
+                sigma = options_df.loc[idx, 'impliedVolatility']
+
+                # 5. Black-Scholes Calculation
+                d1 = (np.log(S / strike) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                d2 = d1 - sigma * np.sqrt(T)
+
+                if option_type.lower() == "call":
+                    price = (S * norm.cdf(d1)) - (strike * np.exp(-r * T) * norm.cdf(d2))
+                    delta = norm.cdf(d1)
+                else:
+                    price = (strike * np.exp(-r * T) * norm.cdf(-d2)) - (S * norm.cdf(-d1))
+                    delta = norm.cdf(d1) - 1
+
+                result = {
+                    "symbol": symbol,
+                    "option_type": option_type,
+                    "theoretical_price": round(price, 4),
+                    "delta": round(delta, 4),
+                    "market_iv": round(sigma, 4),
+                    "params": {
+                        "spot_price": S,
+                        "strike": strike,
+                        "years_to_expiry": round(T, 4),
+                        "risk_free_rate": r
+                    }
+                }
+                return self._to_json(result)
+
+            except Exception as e:
+                return self._to_json(None, f"Error calculating Black-Scholes: {str(e)}")
