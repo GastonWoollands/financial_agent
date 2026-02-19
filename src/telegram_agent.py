@@ -387,6 +387,9 @@ async def bs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"expiration date {expiration_date}, {option_type} option. "
             f"Use get_black_scholes_pricing with symbol={symbol}, strike={strike}, "
             f"expiration_date={expiration_date}, option_type={option_type}."
+            "Respond with a short bullet-point list only. Include: current underlying price, "
+            "Black-Scholes theoretical price, delta, and market implied volatility (IV). "
+            "Use bullet points (e.g. - or •), no long paragraphs."
         )
         logger.info(f"BS query for user {user_id}: {query}")
         await progress.update_text("Procesando datos")

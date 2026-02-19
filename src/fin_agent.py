@@ -785,6 +785,7 @@ class YFinanceTools(Toolkit):
                 # Find the closest strike to get a representative IV
                 idx = (options_df['strike'] - strike).abs().idxmin()
                 sigma = options_df.loc[idx, 'impliedVolatility']
+                last_price = options_df.loc[idx, 'lastPrice']
 
                 # 5. Black-Scholes Calculation
                 d1 = (np.log(S / strike) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
@@ -800,6 +801,7 @@ class YFinanceTools(Toolkit):
                 result = {
                     "symbol": symbol,
                     "option_type": option_type,
+                    "last_price": round(last_price, 4),
                     "theoretical_price": round(price, 4),
                     "delta": round(delta, 4),
                     "market_iv": round(sigma, 4),
