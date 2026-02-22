@@ -51,6 +51,7 @@ Comandos principales:
 /correlacion - Te doy informacion sobre correlaciones entre empresas. Ejemplo: /correlacion $AAPL $MELI
 /volatilidad - Analizo la volatilidad de una accion. Ejemplo: /volatilidad $MELI
 /opciones - Analizo las opciones de una accion. Ejemplo: /opciones $MELI
+/opciones_lista - Lista de opciones con BS, IV, HV y rich/cheap. Ejemplo: /opciones_lista $AAPL 2025-06-20 call
 /bs - Precio teórico Black-Scholes para una opción. Ejemplo: /bs $AAPL 200 2025-06-20 call
 
 Para tickers:
@@ -239,6 +240,7 @@ AGENT_CONFIGS = {
             "volatility": True,
             "options_sentiment": True,
             "black_scholes_pricing": True,
+            "options_chain_with_metrics": True,
         },
         "instructions": dedent("""\
             Your expertise is in options trading, reading the market's pulse through options data to spot bullish or bearish vibes, che.
@@ -249,6 +251,9 @@ AGENT_CONFIGS = {
               - IV Skew: >10% (puts cost more, bearish), <-10% (calls cost more, bullish).
               - Sentiment Score: ≥2 (strong bullish), ≤-2 (strong bearish), else neutral-ish.
               - Trend: Summarize if sentiment shifts (e.g., "Bullish now, bearish later").
+            - For options sentiment (opciones): Always call get_volatility(symbol) and include exactly one line in the reply: "HV (1y): X%" using the volatility_annualized value. No table; keep sentiment and short summary only.
+            - For a list/table of options (opciones_lista): Use get_options_chain_with_metrics(symbol, expiration_date, option_type, max_strikes). Respond with a short, readable table: Strike, Last, BS, IV%, HV%, IV/HV or Rich/Fair/Cheap, Delta. Use a compact format that fits Telegram (e.g. monospace or aligned text). Explain in one line: IV > HV means "rich", IV < HV means "cheap".
+            - For Black-Scholes (bs): When the tool returns hv_pct, iv_hv_ratio, or rich_cheap, include HV (1y) and IV vs HV (or IV/HV and Rich/Fair/Cheap) in the bullet list so the user can see if the option is overpriced.
             - Suggest simple strategies based on sentiment:
               - Strong Bullish: "Buy calls or a call spread."
               - Strong Bearish: "Buy puts or a put spread."
@@ -262,6 +267,7 @@ AGENT_CONFIGS = {
                 - get_volatility(symbol: str)
                 - get_options_sentiment(symbol: str)
                 - get_black_scholes_pricing(symbol: str, strike: float, expiration_date: str, option_type: str = "call")
+                - get_options_chain_with_metrics(symbol: str, expiration_date: str, option_type: str = "call", max_strikes: int = 10, period: str = "1y")
         """)
     },
     "historical_evolution": {

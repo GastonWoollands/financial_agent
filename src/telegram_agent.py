@@ -116,6 +116,41 @@ def parse_bs_args(args: list) -> tuple:
     return (symbol, strike, expiration_date, option_type)
 
 
+def parse_opciones_lista_args(args: list) -> tuple:
+    """
+    Parse /opciones_lista arguments: ticker, YYYY-MM-DD, call|put, [N].
+    Returns (symbol, expiration_date, option_type, max_strikes) on success,
+    or (None, error_message) on failure.
+    """
+    if not args or len(args) < 3:
+        return (
+            None,
+            "Uso: /opciones_lista $TICKER YYYY-MM-DD call|put [N]. Ejemplo: /opciones_lista $AAPL 2025-06-20 call 10",
+        )
+    symbol_raw, expiration_date, option_type_raw = args[0], args[1], args[2]
+    symbol = extract_symbol(symbol_raw)
+    if not symbol:
+        return (None, "Uso: /opciones_lista $TICKER YYYY-MM-DD call|put [N]. Ejemplo: /opciones_lista $AAPL 2025-06-20 call 10")
+    try:
+        exp_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+        if exp_date.date() <= datetime.now().date():
+            return (None, "La fecha de vencimiento tiene que ser YYYY-MM-DD y en el futuro.")
+    except ValueError:
+        return (None, "La fecha de vencimiento tiene que ser YYYY-MM-DD.")
+    option_type = option_type_raw.strip().lower()
+    if option_type not in ("call", "put"):
+        return (None, "El tipo de opción tiene que ser 'call' o 'put'.")
+    max_strikes = 10
+    if len(args) >= 4:
+        try:
+            max_strikes = int(args[3])
+            if max_strikes < 1 or max_strikes > 20:
+                return (None, "N tiene que ser un número entre 1 y 20.")
+        except (ValueError, TypeError):
+            return (None, "N tiene que ser un número entre 1 y 20.")
+    return (symbol, expiration_date, option_type, max_strikes)
+
+
 #----------------------------------------------------------------------------
 
 async def get_agent_response(agent: Agent, query: str, progress: ProgressIndicator = None) -> str:
@@ -179,7 +214,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /correlacion - Te cuento cómo se llevan una lista de acciones. Ejemplo: /correlacion $AAPL $MELI
 /volatilidad - Te analizo la volatilidad de una acción. Ejemplo: /volatilidad $MELI
 /opciones - Te analizo opciones financieras de una acción. Ejemplo: /opciones $MELI
+/opciones_lista - Lista de opciones con BS, IV, HV y rich/cheap. Ejemplo: /opciones_lista $AAPL 2025-06-20 call
 /bs - Precio teórico Black-Scholes de una opción. Ejemplo: /bs $AAPL 200 2025-06-20 call
+
+Opciones: IV vs HV: >1.1 rich, <0.9 cheap.
 
 💡 Tips:
 Usá MAYÚSCULAS para los tickers
@@ -386,9 +424,10 @@ async def bs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"Calculate the Black-Scholes theoretical price for {symbol}, strike {strike}, "
             f"expiration date {expiration_date}, {option_type} option. "
             f"Use get_black_scholes_pricing with symbol={symbol}, strike={strike}, "
-            f"expiration_date={expiration_date}, option_type={option_type}."
+            f"expiration_date={expiration_date}, option_type={option_type}. "
             "Respond with a short bullet-point list only. Include: current underlying price, "
-            "Last option price, Black-Scholes theoretical price, delta, and market implied volatility (IV). "
+            "last option price, Black-Scholes theoretical price, delta, market implied volatility (IV). "
+            "When the tool returns them, also include HV (1y) and IV vs HV (or IV/HV ratio and Rich/Fair/Cheap) so the user can see if the option is overpriced. "
             "Use bullet points (e.g. - or •), no long paragraphs."
         )
         logger.info(f"BS query for user {user_id}: {query}")
@@ -401,6 +440,51 @@ async def bs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         log_bot_response(user_id, command, response_text, execution_time)
     except Exception as e:
         logger.error(f"Unexpected error in bs_command for user {user_id}: {str(e)}")
+        await progress.stop()
+        await update.message.reply_text("Ups, algo salió mal. Intentá de nuevo más tarde.")
+
+
+async def opciones_lista_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /opciones_lista $TICKER YYYY-MM-DD call|put [N] for options chain with metrics."""
+    user_id = update.effective_user.id
+    command = "/opciones_lista"
+    start_time = time.time()
+
+    logger.info(f"Command '{command}' received from user {user_id}")
+
+    if not rate_limiter.is_allowed(user_id):
+        logger.warning(f"Rate limit exceeded for user {user_id}")
+        await update.message.reply_text("Che, estás haciendo muchas consultas. Esperá un minuto y volvé a intentar.")
+        return
+
+    progress = ProgressIndicator(update, context)
+    await progress.start("Listando opciones")
+
+    try:
+        parsed = parse_opciones_lista_args(context.args or [])
+        if parsed[0] is None:
+            await progress.stop()
+            await update.message.reply_text(parsed[1])
+            return
+
+        symbol, expiration_date, option_type, max_strikes = parsed
+        query = (
+            f"Get a list of options for {symbol}, expiration {expiration_date}, {option_type}. "
+            f"Use get_options_chain_with_metrics with symbol={symbol}, expiration_date={expiration_date}, "
+            f"option_type={option_type}, max_strikes={max_strikes}. "
+            "Respond with a short, readable table: Strike, Last, BS, IV%, HV%, IV/HV or Rich/Fair/Cheap, Delta. "
+            "Use a compact format that fits Telegram. Add one line: IV > HV means rich, IV < HV means cheap."
+        )
+        logger.info(f"opciones_lista query for user {user_id}: {query}")
+        await progress.update_text("Procesando datos")
+        config = COMMANDS["opciones_lista"]
+        response_text = await get_agent_response(config.agent, query, progress)
+        await progress.stop()
+        await update.message.reply_text(response_text)
+        execution_time = time.time() - start_time
+        log_bot_response(user_id, command, response_text, execution_time)
+    except Exception as e:
+        logger.error(f"Unexpected error in opciones_lista_command for user {user_id}: {str(e)}")
         await progress.stop()
         await update.message.reply_text("Ups, algo salió mal. Intentá de nuevo más tarde.")
 
@@ -441,6 +525,7 @@ def register_handlers(app):
         "correlacion": correlation,
         "volatilidad": volatility,
         "opciones": options,
+        "opciones_lista": opciones_lista_command,
         "bs": bs_command,
     }
     for command, handler in handlers.items():

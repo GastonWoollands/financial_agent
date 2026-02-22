@@ -30,6 +30,7 @@ class YFinanceTools(Toolkit):
         options_sentiment: bool = False,
         historical_evolution: bool = False,
         black_scholes_pricing: bool = False,
+        options_chain_with_metrics: bool = False,
         enable_all: bool = False,
         max_workers: int = 5,
         request_timeout: int = 10,
@@ -70,6 +71,8 @@ class YFinanceTools(Toolkit):
             self.register(self.get_historical_comparison)
         if black_scholes_pricing or enable_all:
             self.register(self.get_black_scholes_pricing)
+        if options_chain_with_metrics or enable_all:
+            self.register(self.get_options_chain_with_metrics)
 
     def _retry_with_backoff(self, func, *args, **kwargs):
         """Implement exponential backoff for retrying failed requests."""
@@ -114,6 +117,23 @@ class YFinanceTools(Toolkit):
     def _compute_returns(self, data: pd.Series) -> pd.Series:
         """Compute percentage change returns, dropping NaN values."""
         return data.pct_change().dropna()
+
+    def _get_annualized_volatility(self, symbol: str, period: str = "1y", interval: str = "1d") -> Optional[float]:
+        """Compute annualized volatility (HV) for a symbol. Returns float e.g. 0.25 for 25%, or None on failure."""
+        try:
+            ticker = self._fetch_ticker(symbol)
+            data = self._retry_with_backoff(
+                lambda: ticker.history(period=period, interval=interval)
+            )
+            if data.empty or len(data) < 2:
+                return None
+            returns = self._compute_returns(data["Close"])
+            if returns.empty:
+                return None
+            volatility = returns.std() * (252 ** 0.5)
+            return float(volatility) if not pd.isna(volatility) and volatility > 0 else None
+        except Exception:
+            return None
 
     def _vectorized_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute technical indicators using vectorized operations."""
@@ -812,7 +832,102 @@ class YFinanceTools(Toolkit):
                         "risk_free_rate": r
                     }
                 }
+                hv = self._get_annualized_volatility(symbol)
+                if hv is not None and hv > 0:
+                    result["hv_pct"] = round(hv * 100, 2)
+                    iv_hv_ratio = sigma / hv
+                    result["iv_hv_ratio"] = round(iv_hv_ratio, 2)
+                    result["rich_cheap"] = "Rich" if iv_hv_ratio > 1.1 else ("Cheap" if iv_hv_ratio < 0.9 else "Fair")
                 return self._to_json(result)
 
             except Exception as e:
                 return self._to_json(None, f"Error calculating Black-Scholes: {str(e)}")
+
+    def get_options_chain_with_metrics(
+        self,
+        symbol: str,
+        expiration_date: str,
+        option_type: str = "call",
+        max_strikes: int = 10,
+        period: str = "1y",
+    ) -> str:
+        """Returns a list of options for an expiration with Strike, Last, BS price, IV%, HV%, IV/HV, Rich/Fair/Cheap, Delta.
+
+        Args:
+            symbol (str): Stock ticker.
+            expiration_date (str): Expiration date in 'YYYY-MM-DD' format.
+            option_type (str): "call" or "put".
+            max_strikes (int): Maximum number of strikes to return (default 10).
+            period (str): Period for historical volatility (default "1y").
+        """
+        try:
+            ticker = self._fetch_ticker(symbol)
+            exp_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+            if (exp_date - datetime.now()).days <= 0:
+                return self._to_json(None, "Expiration date must be in the future.")
+
+            S = ticker.info.get("regularMarketPrice") or ticker.info.get("currentPrice")
+            r = 0.04
+            T = (exp_date - datetime.now()).days / 365.0
+            if T <= 0:
+                return self._to_json(None, "Expiration date must be in the future.")
+
+            chain = ticker.option_chain(expiration_date)
+            options_df = chain.calls if option_type.lower() == "call" else chain.puts
+            if options_df.empty:
+                return self._to_json(None, f"No {option_type} chain for {expiration_date}.")
+
+            hv = self._get_annualized_volatility(symbol, period=period)
+            hv_pct = round(hv * 100, 2) if hv is not None and hv > 0 else None
+
+            valid = options_df[
+                options_df["impliedVolatility"].notna()
+                & (options_df["impliedVolatility"] > 0)
+                & options_df["lastPrice"].notna()
+            ].copy()
+            if valid.empty:
+                return self._to_json(None, f"No valid IV/lastPrice for {expiration_date}.")
+
+            valid["dist"] = (valid["strike"] - S).abs()
+            valid = valid.sort_values("dist").head(max_strikes)
+
+            rows = []
+            for _, row in valid.iterrows():
+                strike = float(row["strike"])
+                sigma = float(row["impliedVolatility"])
+                last_price = float(row["lastPrice"])
+                d1 = (np.log(S / strike) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                d2 = d1 - sigma * np.sqrt(T)
+                if option_type.lower() == "call":
+                    bs_price = (S * norm.cdf(d1)) - (strike * np.exp(-r * T) * norm.cdf(d2))
+                    delta = norm.cdf(d1)
+                else:
+                    bs_price = (strike * np.exp(-r * T) * norm.cdf(-d2)) - (S * norm.cdf(-d1))
+                    delta = norm.cdf(d1) - 1
+
+                iv_pct = round(sigma * 100, 2)
+                opt = {
+                    "strike": strike,
+                    "last_price": round(last_price, 4),
+                    "bs_price": round(bs_price, 4),
+                    "iv_pct": iv_pct,
+                    "hv_pct": hv_pct,
+                    "delta": round(delta, 4),
+                }
+                if hv is not None and hv > 0:
+                    iv_hv_ratio = round(sigma / hv, 2)
+                    opt["iv_hv_ratio"] = iv_hv_ratio
+                    opt["rich_cheap"] = "Rich" if iv_hv_ratio > 1.1 else ("Cheap" if iv_hv_ratio < 0.9 else "Fair")
+                rows.append(opt)
+
+            result = {
+                "symbol": symbol,
+                "expiration_date": expiration_date,
+                "option_type": option_type,
+                "spot_price": round(S, 2),
+                "hv_pct": hv_pct,
+                "options": rows,
+            }
+            return self._to_json(result)
+        except Exception as e:
+            return self._to_json(None, f"Error fetching options chain: {str(e)}")

@@ -117,6 +117,14 @@ COMMANDS = {
         required_symbols_min=1,
         no_args_message="Mandáme un ticker. Ejemplo: /opciones $AAPL"
     ),
+    "opciones_lista": CommandConfig(
+        description="List of options with BS, IV, HV and rich/cheap for an expiration",
+        agent=agents["options"],
+        query_template="",
+        requires_symbol=True,
+        required_symbols_min=1,
+        no_args_message="Uso: /opciones_lista $TICKER YYYY-MM-DD call|put [N]. Ejemplo: /opciones_lista $AAPL 2025-06-20 call 10"
+    ),
     "bs": CommandConfig(
         description="Black-Scholes theoretical option price",
         agent=agents["options"],
