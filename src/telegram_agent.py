@@ -8,9 +8,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 # from textwrap import dedent
 from agno.agent import Agent
-from agents_utils import create_financial_agent
 from agents_utils import DEFAULT_RESPONSE, WELCOME_MESSAGE, PARSE_MODE
-from commands import CommandConfig, COMMANDS
+from commands import CommandConfig, COMMANDS, master_agent
 from progress_indicator import ProgressIndicator
 from logging.handlers import RotatingFileHandler
 
@@ -153,13 +152,26 @@ def parse_opciones_lista_args(args: list) -> tuple:
 
 #----------------------------------------------------------------------------
 
-async def get_agent_response(agent: Agent, query: str, progress: ProgressIndicator = None) -> str:
+async def get_agent_response(
+    agent: Agent,
+    query: str,
+    progress: ProgressIndicator = None,
+    user_id: int | None = None,
+) -> str:
     """Runs a query through the financial agent and returns the response."""
     try:
         logger.info(f"Running agent query: {query}")
         if progress:
             await progress.update_text("Consultando datos financieros")
-        response = agent.run(query)
+
+        session_id = f"telegram-{user_id}" if user_id is not None else None
+
+        response = agent.run(
+            input=query,
+            user_id=str(user_id) if user_id is not None else None,
+            session_id=session_id,
+            add_history_to_context=True,
+        )
         response_content = response.content if hasattr(response, "content") else str(response)
         logger.debug(f"Agent response received: {response_content[:100]}...")
         return response_content
@@ -204,7 +216,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Send a help message with all available commands."""
     user_id = update.effective_user.id
     logger.info(f"Help command requested by user {user_id}")
-    help_text = """📊 Comandos disponibles:
+    help_text = """📊 Cómo hablar conmigo:
+
+Podés escribirme en texto libre (sin comandos) para charlar sobre mercados, acciones, opciones y riesgo. Yo uso datos en tiempo real y mis herramientas financieras para responder.
+
+Comandos disponibles (atajos):
 
 /precio - Te tiro el precio de una acción. Ejemplo: /precio $AAPL
 /noticias - Las últimas novedades de una empresa. Ejemplo: /noticias $TSLA
@@ -322,7 +338,12 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE, con
 
                 logger.info(f"Executing query for user {user_id}: {query}")
                 await progress.update_text("Procesando datos")
-                response_text = await get_agent_response(config.agent, query, progress)
+                response_text = await get_agent_response(
+                    config.agent,
+                    query,
+                    progress,
+                    user_id=user_id,
+                )
                 logger.debug(f"Response length for user {user_id}: {len(response_text)} characters")
 
             except IndexError:
@@ -433,7 +454,12 @@ async def bs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.info(f"BS query for user {user_id}: {query}")
         await progress.update_text("Procesando datos")
         config = COMMANDS["bs"]
-        response_text = await get_agent_response(config.agent, query, progress)
+        response_text = await get_agent_response(
+            config.agent,
+            query,
+            progress,
+            user_id=user_id,
+        )
         await progress.stop()
         await update.message.reply_text(response_text)
         execution_time = time.time() - start_time
@@ -478,7 +504,12 @@ async def opciones_lista_command(update: Update, context: ContextTypes.DEFAULT_T
         logger.info(f"opciones_lista query for user {user_id}: {query}")
         await progress.update_text("Procesando datos")
         config = COMMANDS["opciones_lista"]
-        response_text = await get_agent_response(config.agent, query, progress)
+        response_text = await get_agent_response(
+            config.agent,
+            query,
+            progress,
+            user_id=user_id,
+        )
         await progress.stop()
         await update.message.reply_text(response_text)
         execution_time = time.time() - start_time
@@ -488,6 +519,62 @@ async def opciones_lista_command(update: Update, context: ContextTypes.DEFAULT_T
         await progress.stop()
         await update.message.reply_text("Ups, algo salió mal. Intentá de nuevo más tarde.")
 
+
+async def conversation_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle open-text conversational messages (no leading command)."""
+    user_id = update.effective_user.id
+    command = "conversation_message"
+    start_time = time.time()
+
+    logger.info(f"Free-text message from user {user_id}")
+
+    if not rate_limiter.is_allowed(user_id):
+        logger.warning(f"Rate limit exceeded for user {user_id}")
+        await update.message.reply_text(
+            "Estás haciendo muchas consultas. Esperá un minuto y volvé a intentar."
+        )
+        return
+
+    progress = ProgressIndicator(update, context)
+    await progress.start("Pensando tu consulta financiera")
+
+    try:
+        user_query = (update.message.text or "").strip()
+        if not user_query:
+            await progress.stop()
+            await update.message.reply_text(
+                "Contame qué querés saber del mercado, de un ticker o de tu estrategia."
+            )
+            return
+
+        prompt = (
+            "Modo conversación abierta sobre mercados y finanzas. "
+            "Usá las herramientas financieras para responder con datos actuales.\n\n"
+            f"Usuario: {user_query}"
+        )
+
+        logger.info(f"Conversation prompt for user {user_id}: {prompt}")
+        await progress.update_text("Consultando datos y armando respuesta")
+
+        response_text = await get_agent_response(
+            master_agent,
+            prompt,
+            progress,
+            user_id=user_id,
+        )
+
+        await progress.stop()
+        await update.message.reply_text(response_text)
+
+        execution_time = time.time() - start_time
+        log_bot_response(user_id, command, response_text, execution_time)
+
+    except Exception as e:
+        logger.error(f"Unexpected error in conversation_message for user {user_id}: {str(e)}")
+        await progress.stop()
+        await update.message.reply_text(
+            "Ups, algo salió mal. Intentá de nuevo más tarde."
+        )
 
 #----------------------------------------------------------------------------
 
@@ -531,7 +618,11 @@ def register_handlers(app):
     for command, handler in handlers.items():
         app.add_handler(CommandHandler(command, handler))
         logger.debug(f"Handler registered for command: {command}")
-    
+
+    # Free-text conversational handler (no leading slash)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, conversation_message))
+    logger.debug("Free-text conversation handler registered")
+
     logger.info("All handlers registered successfully")
 
 #----------------------------------------------------------------------------

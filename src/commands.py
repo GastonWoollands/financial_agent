@@ -1,15 +1,9 @@
 from dataclasses import dataclass
-from agents_utils import create_financial_agent
+from agents_utils import create_master_agent, create_financial_agent
 
 #----------------------------------------------------------------------------
 
-agents = {
-    "general"             : create_financial_agent("general"),
-    "technical"           : create_financial_agent("technical"),
-    "fundamental"         : create_financial_agent("fundamental"),
-    "pairs_and_volatility": create_financial_agent("pairs_and_volatility"),
-    "options"             : create_financial_agent("options")
-}
+master_agent = create_master_agent()
 
 #----------------------------------------------------------------------------
 
@@ -45,13 +39,13 @@ COMMANDS = {
     ),
     "precio": CommandConfig(
         description="Get current stock price",
-        agent=agents["general"],
+        agent=master_agent,
         query_template="Dame el precio actual del ticker (symbol): {symbol}",
         no_args_message="Por favor, especificá el símbolo de la acción. Ejemplo: /precio $AAPL"
     ),
     "noticias": CommandConfig(
         description="Get company or market news",
-        agent=agents["general"],
+        agent=master_agent,
         query_template="Dame un resumen de las últimas noticias del ticker (symbol): {symbol}",
         requires_symbol=True,
         required_symbols_min=1,
@@ -60,7 +54,7 @@ COMMANDS = {
 
     "noticias_general": CommandConfig(
         description="Get company or market news",
-        agent=agents["general"],
+        agent=master_agent,
         query_template="Dame un resumen de las noticias del mercado financiero del ticker: ^GSPC y el ticker ^SPX",
         requires_symbol=False,
         required_symbols_min=0,
@@ -68,7 +62,7 @@ COMMANDS = {
     ),
     "tecnicos": CommandConfig(
         description="Get technical analysis",
-        agent=agents["technical"],
+        agent=master_agent,
         query_template="""Dame el resumen de los análisis técnicos del ticker: {symbol} usando los siguientes parámetros:
         - symbol: {symbol}
         - period: 1y
@@ -78,7 +72,7 @@ COMMANDS = {
     ),
     "fundamentales": CommandConfig(
         description="Get fundamental analysis",
-        agent=agents["fundamental"],
+        agent=master_agent,
         query_template="""Dame el resumen detallado de análisis fundamental del ticker: {symbol} usando los siguientes parámetros:
         - symbol: {symbol}
         - period: 1y
@@ -88,7 +82,7 @@ COMMANDS = {
     ),
     "correlacion": CommandConfig(
         description="Get correlation between two assets",
-        agent=agents["pairs_and_volatility"],
+        agent=master_agent,
         query_template="""Dame la correlacion entre los siguientes tickers: {symbols} usando los siguientes parámetros:
         - period: 1y
         - interval: 1d
@@ -99,7 +93,7 @@ COMMANDS = {
     ),
     "volatilidad": CommandConfig(
         description="Get volatility for the asset using the ^SPX as benchmark and the default period of 1 year",
-        agent=agents["pairs_and_volatility"],
+        agent=master_agent,
         query_template="""Dame un análisis de volatilidad para el ticker {symbol} usando los siguientes parámetros:
         - benchmark: ^SPX
         - period: 1y
@@ -111,7 +105,7 @@ COMMANDS = {
     ),
     "opciones": CommandConfig(
         description="Get options analysis for the asset using the default period of 1 year",
-        agent=agents["options"],
+        agent=master_agent,
         query_template="Dame analisis de opciones del ticker: {symbol} con los parametros por defecto",
         requires_symbol=True,
         required_symbols_min=1,
@@ -119,7 +113,7 @@ COMMANDS = {
     ),
     "opciones_lista": CommandConfig(
         description="List of options with BS, IV, HV and rich/cheap for an expiration",
-        agent=agents["options"],
+        agent=master_agent,
         query_template="",
         requires_symbol=True,
         required_symbols_min=1,
@@ -127,7 +121,7 @@ COMMANDS = {
     ),
     "bs": CommandConfig(
         description="Black-Scholes theoretical option price",
-        agent=agents["options"],
+        agent=master_agent,
         query_template="",
         requires_symbol=True,
         required_symbols_min=1,

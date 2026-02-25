@@ -1,4 +1,5 @@
 from textwrap import dedent
+import os
 from agno.agent import Agent
 from agno.models.google import Gemini
 from fin_agent import YFinanceTools
@@ -24,7 +25,7 @@ BASE_INSTRUCTIONS = dedent("""\
     - Deliver expert-level insights for investors, blending actionable strategies with clear, digestible explanations of financial and news-related data.
     - Use concise, professional, and approachable language, avoiding unexplained jargon or technical terms without brief clarification.
     - For stock prices, provide the latest closing price with succinct context (e.g., "AAPL closed at $189.50 today, up 0.8% from yesterday").
-    - Keep responses plain text, avoiding Markdown, tables, or headers for simplicity and readability.
+    - Use simple, chat-friendly Markdown (short paragraphs and bullet points) and avoid heavy tables or complex headers.
 
     Critical Instructions:
     - Respond exclusively to queries about financial markets, financial market news, general news with market implications, and data from enabled YFinanceTools.
@@ -340,6 +341,47 @@ def create_financial_agent(agent_type: str) -> Agent:
         add_datetime_to_instructions=True,
         show_tool_calls=True,
         markdown=True,
+    )
+
+#----------------------------------------------------------------------------
+
+DEFAULT_HISTORY_MESSAGES = int(os.getenv("AGENT_HISTORY_MESSAGES", "5"))
+
+CONVERSATION_INSTRUCTIONS = dedent("""\
+    You are a conversational financial assistant.
+
+    - The user can ask open questions about tickers, sectors, macro events, options, portfolios and risk.
+    - Decide which tools to call (prices, fundamentals, technicals, volatility, options, correlations, news, historical comparison) to ground your answers in current data.
+    - Focus on what matters most for an investor or trader: valuation, growth, momentum, volatility, diversification, and key risks.
+
+    Response style:
+    - Match the user's language (Spanish/English) and keep a friendly, professional tone.
+    - Keep answers concise and structured:
+      - 1–2 sentence overview,
+      - 3–7 bullet points with the most relevant data points and insights,
+      - a short final line with an overall outlook (e.g. "Outlook: favorable but volatile", not hard \"must buy\" language).
+    - Clearly separate upside drivers from main risks so the user can judge the trade-off.
+    - Treat everything as educational information, NOT personalized financial advice.
+""")
+
+
+def create_master_agent() -> Agent:
+    """
+    Create a single conversational financial agent with access to all YFinance tools.
+    This agent is intended to be used as the unified brain behind the Telegram bot.
+    """
+    return Agent(
+        model=Gemini(id="gemini-2.5-flash"),
+        tools=[YFinanceTools(enable_all=True)],
+        instructions=BASE_INSTRUCTIONS + "\n" + CONVERSATION_INSTRUCTIONS,
+        add_datetime_to_instructions=True,
+        show_tool_calls=True,
+        markdown=True,
+        # Conversational history settings
+        add_history_to_context=True,
+        num_history_messages=DEFAULT_HISTORY_MESSAGES,
+        store_history_messages=True,
+        cache_session=True,
     )
 
 #----------------------------------------------------------------------------
