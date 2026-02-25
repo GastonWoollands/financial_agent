@@ -338,12 +338,6 @@ def create_financial_agent(agent_type: str) -> Agent:
         model=Gemini(id="gemini-2.5-flash"),
         tools=[YFinanceTools(**config["tools"])],
         instructions=full_instructions,
-        # agno 2.5.4 params:
-        add_history_to_context=True,
-        num_history_messages=DEFAULT_HISTORY_MESSAGES,
-        add_datetime_to_context=True,
-        # show_tool_calls=True,
-        markdown=True,
     )
 
 #----------------------------------------------------------------------------
@@ -377,11 +371,6 @@ def create_master_agent() -> Agent:
         model=Gemini(id="gemini-2.5-flash"),
         tools=[YFinanceTools(enable_all=True)],
         instructions=BASE_INSTRUCTIONS + "\n" + CONVERSATION_INSTRUCTIONS,
-        add_history_to_context=True,
-        num_history_messages=DEFAULT_HISTORY_MESSAGES,
-        add_datetime_to_context=True,
-        # show_tool_calls=True,
-        markdown=True,
     )
 
 #----------------------------------------------------------------------------

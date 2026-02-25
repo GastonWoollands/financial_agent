@@ -164,15 +164,38 @@ async def get_agent_response(
         if progress:
             await progress.update_text("Consultando datos financieros")
 
-        session_id = f"telegram-{user_id}" if user_id is not None else None
+        # Build manual history context
+        if user_id is not None:
+            history = conversation_history[user_id]
+            history_lines = [
+                f"{m['role'].capitalize()}: {m['text']}" for m in history
+            ]
+            history_block = "\n".join(history_lines)
+            if history_block:
+                full_input = (
+                    "Contexto de la conversación (últimos mensajes):\n"
+                    f"{history_block}\n\n"
+                    "Nuevo mensaje del usuario:\n"
+                    f"{query}"
+                )
+            else:
+                full_input = query
+        else:
+            full_input = query
 
         response = agent.run(
-            input=query,
+            input=full_input,
             user_id=str(user_id) if user_id is not None else None,
             session_id=f"telegram-{user_id}" if user_id is not None else None,
         )
         response_content = response.content if hasattr(response, "content") else str(response)
         logger.debug(f"Agent response received: {response_content[:100]}...")
+
+        # Update in-memory history
+        if user_id is not None:
+            conversation_history[user_id].append({"role": "usuario", "text": query})
+            conversation_history[user_id].append({"role": "agente", "text": response_content})
+
         return response_content
     except Exception as e:
         logger.error(f"Error running agent query '{query}': {str(e)}")
@@ -185,7 +208,7 @@ WAITING_FOR_SYMBOL = 1
 
 # Add rate limiting
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, deque
 
 class RateLimiter:
     def __init__(self, max_requests: int, time_window: int):
@@ -209,6 +232,14 @@ class RateLimiter:
         return True
 
 rate_limiter = RateLimiter(max_requests=10, time_window=60)
+
+
+HISTORY_LIMIT = int(os.getenv("AGENT_HISTORY_MESSAGES", "5"))
+
+# Per-user conversation history: deque of {"role": "...", "text": "..."}
+conversation_history = defaultdict(
+    lambda: deque(maxlen=HISTORY_LIMIT * 2)
+)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
