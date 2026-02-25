@@ -327,19 +327,22 @@ def create_financial_agent(agent_type: str) -> Agent:
         Agent: Configured financial agent instance.
     """
     if agent_type not in AGENT_CONFIGS:
-        raise ValueError(f"Unknown agent type: {agent_type}. Use 'general', 'technical', 'fundamental'.")
+        raise ValueError(
+            f"Unknown agent type: {agent_type}. Use 'general', 'technical', 'fundamental'."
+        )
 
     config = AGENT_CONFIGS[agent_type]
     full_instructions = BASE_INSTRUCTIONS + "\n" + config["instructions"]
 
     return Agent(
         model=Gemini(id="gemini-2.5-flash"),
-        tools=[
-            YFinanceTools(**config["tools"])
-        ],
+        tools=[YFinanceTools(**config["tools"])],
         instructions=full_instructions,
-        add_datetime_to_instructions=True,
-        show_tool_calls=True,
+        # agno 2.5.4 params:
+        add_history_to_context=True,
+        num_history_messages=DEFAULT_HISTORY_MESSAGES,
+        add_datetime_to_context=True,
+        # show_tool_calls=True,
         markdown=True,
     )
 
@@ -374,14 +377,11 @@ def create_master_agent() -> Agent:
         model=Gemini(id="gemini-2.5-flash"),
         tools=[YFinanceTools(enable_all=True)],
         instructions=BASE_INSTRUCTIONS + "\n" + CONVERSATION_INSTRUCTIONS,
-        add_datetime_to_instructions=True,
-        show_tool_calls=True,
-        markdown=True,
-        # Conversational history settings
         add_history_to_context=True,
         num_history_messages=DEFAULT_HISTORY_MESSAGES,
-        store_history_messages=True,
-        cache_session=True,
+        add_datetime_to_context=True,
+        # show_tool_calls=True,
+        markdown=True,
     )
 
 #----------------------------------------------------------------------------

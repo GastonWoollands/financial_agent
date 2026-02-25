@@ -169,8 +169,7 @@ async def get_agent_response(
         response = agent.run(
             input=query,
             user_id=str(user_id) if user_id is not None else None,
-            session_id=session_id,
-            add_history_to_context=True,
+            session_id=f"telegram-{user_id}" if user_id is not None else None,
         )
         response_content = response.content if hasattr(response, "content") else str(response)
         logger.debug(f"Agent response received: {response_content[:100]}...")
